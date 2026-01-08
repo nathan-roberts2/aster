@@ -1,3 +1,17 @@
+"""
+Created on Tuesday Jan 06, 2026
+Modified on Thursday Jan 08, 2026
+
+@author: Nathan Roberts (lpdaac@usgs.gov)
+
+This script will allow users to convert Version 4 ASTER HDF products to GeoTIFFs. 
+
+################################
+Environment Setup: mamba create -n hdf_translate -c conda-forge --yes python=3.12 gdal libgdal-hdf4
+ Usage: python translate_aster_to_geotiff.py -f <Directory Containing Downloaded HDF L1B Products> -o <Directory where GeoTIFFs will write to>\
+################################
+"""
+
 import argparse
 from osgeo import gdal
 import os
@@ -25,13 +39,27 @@ print('Found ', len(hdf_files), ' HDF Files to Convert')
 def translate_hdf(input, hdf_file, id):
     dataset = gdal.Open(os.path.join(input, hdf_file))
 
-    for sub_dataset, _ in dataset.GetSubDatasets():
-        print(sub_dataset)
-        file_name = os.path.join(outputs, '{}_{}_{}.tif'.format(id, sub_dataset.split(':')[4], sub_dataset.split(':')[5]))
-        gdal.Translate(file_name, sub_dataset)
+    sub_datasets = [sd[0] for sd in dataset.GetSubDatasets()]
+    
+    for sd_uri in sub_datasets:
+        parts = sd_uri.split(':')
+        if len(parts) < 5:
+            print(f"Skipping unexpected subdataset: {sd_uri}")
+            continue
+        swath, field = parts[-2], parts[-1]
+        out_tif = os.path.join(outputs, f"{id}_{swath}_{field}.tif")
+        print('Translating ', sd_uri)
+       # translate
+        gdal.Translate(
+            out_tif,
+            sd_uri,
+            format="GTiff",
+            creationOptions=["COMPRESS=LZW", "TILED=YES"])
 
 for f in hdf_files:
-    print(f)
-    id = f.split('.')[0]
-    translate_hdf(inputs, f, id)
+    try:
+        id = f.split('.')[0]
+        translate_hdf(inputs, f, id)
+    except Exception as e:
+        print(f, 'Is not an HDF File, not converted')
 
